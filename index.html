@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeScore — Complexity Scanner</title>
+<meta name="description" content="Paste code, get a complexity score. Cyclomatic complexity, nesting depth, function length, code smells.">
+<meta property="og:title" content="CodeScore — Complexity Scanner">
+<meta property="og:description" content="Instant code complexity analysis. No API, no signup.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;
+  --accent:#79c0ff;--accent-hover:#a5d6ff;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#f0883e;--blue:#58a6ff;
+  --radius:8px;
+  --font-sans:'Inter',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+html{font-size:16px}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100dvh;line-height:1.6}
+.container{max-width:960px;margin:0 auto;padding:24px 16px 80px}
+header{text-align:center;margin-bottom:32px;padding-top:28px}
+h1{font-size:clamp(1.8rem,4vw,2.4rem);font-weight:700;letter-spacing:-0.5px;margin-bottom:6px}
+h1 .accent{color:var(--accent)}
+.subtitle{color:var(--muted);font-size:.9rem}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+
+textarea{
+  width:100%;min-height:240px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;color:var(--text);font-family:var(--font-mono);font-size:.82rem;
+  line-height:1.5;resize:vertical;outline:none;tab-size:4;
+}
+textarea:focus{border-color:var(--accent)}
+textarea::placeholder{color:var(--muted)}
+
+.controls{display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap;align-items:center}
+.btn{
+  background:var(--accent);color:#0d1117;border:none;border-radius:var(--radius);
+  padding:10px 20px;font-family:var(--font-sans);font-weight:600;font-size:.88rem;
+  cursor:pointer;transition:background .2s,transform .1s;white-space:nowrap;
+}
+.btn:hover{background:var(--accent-hover)}
+.btn:active{transform:scale(0.97)}
+.btn--secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn--secondary:hover{border-color:var(--muted);background:var(--surface)}
+.lang-tag{font-family:var(--font-mono);font-size:.75rem;color:var(--muted);padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px}
+
+.output{margin-top:28px;display:none}
+.output-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.output-header h2{font-size:1.1rem;font-weight:600}
+
+/* Grade card */
+.grade-card{
+  display:flex;align-items:center;gap:20px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 24px;margin-bottom:24px;flex-wrap:wrap;
+}
+.grade-letter{
+  font-size:3rem;font-weight:800;font-family:var(--font-mono);
+  width:72px;height:72px;display:flex;align-items:center;justify-content:center;
+  border-radius:12px;flex-shrink:0;
+}
+.grade-details{flex:1;min-width:200px}
+.grade-details h3{font-size:1rem;font-weight:600;margin-bottom:4px}
+.grade-details p{font-size:.85rem;color:var(--muted)}
+.grade-stats{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px}
+.grade-stat{font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:4px}
+.grade-stat strong{color:var(--text)}
+
+/* Function table */
+.fn-table{width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:24px}
+.fn-table th{
+  text-align:left;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--border);font-weight:600;
+}
+.fn-table td{padding:8px 10px;border-bottom:1px solid rgba(48,54,61,.3)}
+.fn-table tr:last-child td{border-bottom:none}
+.fn-name{font-family:var(--font-mono);font-weight:500}
+.fn-bar{height:6px;border-radius:3px;min-width:4px}
+.fn-grade{font-family:var(--font-mono);font-weight:700;font-size:.8rem;width:28px;text-align:center}
+
+/* Smells */
+.smells{margin-bottom:24px}
+.smell{
+  display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(48,54,61,.3);
+  align-items:flex-start;font-size:.88rem;
+}
+.smell:last-child{border-bottom:none}
+.smell-icon{font-size:1rem;flex-shrink:0;width:22px;text-align:center}
+.smell-line{font-family:var(--font-mono);font-size:.78rem;color:var(--muted);min-width:50px;flex-shrink:0}
+.smell-msg{color:var(--muted)}
+.smell-msg strong{color:var(--text)}
+
+/* Heatmap */
+.heatmap{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 0;margin-bottom:24px;overflow-x:auto;max-height:400px;overflow-y:auto;
+}
+.hm-line{
+  display:flex;font-family:var(--font-mono);font-size:.78rem;line-height:1.6;
+  padding:0 16px;
+}
+.hm-num{color:var(--muted);min-width:40px;text-align:right;padding-right:12px;flex-shrink:0;user-select:none}
+.hm-code{white-space:pre;flex:1}
+
+.section-title{
+  font-size:.82rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;
+  padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;
+}
+.badge{font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:none;letter-spacing:0}
+.badge--red{background:rgba(248,81,73,.15);color:var(--red)}
+.badge--yellow{background:rgba(210,153,34,.15);color:var(--yellow)}
+.badge--green{background:rgba(63,185,80,.15);color:var(--green)}
+
+.md-raw{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 20px;font-family:var(--font-mono);font-size:.8rem;line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;color:var(--muted);
+  max-height:500px;overflow-y:auto;display:none;
+}
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--green);color:#fff;padding:10px 24px;border-radius:var(--radius);
+  font-size:.9rem;font-weight:500;opacity:0;transition:all .3s ease;
+  pointer-events:none;z-index:100;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+footer{text-align:center;margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--muted)}
+
+@media(max-width:600px){
+  .controls{flex-direction:column}.btn{width:100%}
+  .grade-card{flex-direction:column;text-align:center}
+  .fn-table{font-size:.78rem}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Code<span class="accent">Score</span></h1>
+    <p class="subtitle">Paste code. Get a complexity grade, function breakdown, and code smell flags.</p>
+  </header>
+
+  <label for="codeInput" class="sr-only">Paste code</label>
+  <textarea id="codeInput" placeholder="Paste a JavaScript, TypeScript, or Python file here..."></textarea>
+
+  <div class="controls">
+    <button class="btn" onclick="analyze()">Analyze</button>
+    <button class="btn btn--secondary" onclick="loadExample()">Load Example</button>
+    <button class="btn btn--secondary" onclick="clearAll()">Clear</button>
+    <span id="langTag" class="lang-tag" style="display:none"></span>
+  </div>
+
+  <div id="output" class="output">
+    <div class="output-header">
+      <h2>Complexity Report</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn--secondary" onclick="copyMarkdown()">Copy Markdown</button>
+        <button class="btn btn--secondary" onclick="toggleRaw()">View Raw</button>
+      </div>
+    </div>
+    <div id="gradeCard"></div>
+    <div id="fnTable"></div>
+    <div id="smells"></div>
+    <div id="heatmap"></div>
+    <div id="mdRaw" class="md-raw"></div>
+  </div>
+
+  <footer>Built by Rocket Labs AI</footer>
+</div>
+
+<div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+function showToast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
+let lastMarkdown = '';
+
+// ─── Language Detection ──────────────────────────────────────
+function detectLang(code) {
+  if (/^(import|from)\s+\w+|def\s+\w+\s*\(|class\s+\w+\s*[:(]|^\s*@\w+/m.test(code) && !/\bfunction\b|\bconst\b|\blet\b|\bvar\b/.test(code))
+    return 'python';
+  if (/\b(const|let|var|function|=>|import\s+{|export\s+(default|const|function)|interface\s+\w+|type\s+\w+\s*=)\b/.test(code))
+    return 'javascript';
+  return 'javascript';
+}
+
+// ─── Function Finder ─────────────────────────────────────────
+function findFunctions(lines, lang) {
+  const fns = [];
+
+  if (lang === 'python') {
+    const re = /^(\s*)(async\s+)?def\s+(\w+)\s*\(/;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(re);
+      if (!m) continue;
+      const indent = m[1].length;
+      const name = m[3];
+      const start = i;
+      let end = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        const line = lines[j];
+        if (line.trim() === '') { end = j; continue; }
+        const li = line.search(/\S/);
+        if (li <= indent && line.trim() !== '') break;
+        end = j;
+      }
+      fns.push({ name, start, end, lines: lines.slice(start, end + 1) });
+    }
+  } else {
+    // JS/TS: function declarations, arrow functions, methods
+    const patterns = [
+      /(?:async\s+)?function\s+(\w+)\s*\(/,
+      /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[\w]+)\s*=>/,
+      /(\w+)\s*\([^)]*\)\s*{/,
+    ];
+    let braceDepth = 0;
+    let currentFn = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (!currentFn) {
+        for (const pat of patterns) {
+          const m = line.match(pat);
+          if (m && m[1] && !['if', 'else', 'for', 'while', 'switch', 'catch', 'class', 'return', 'new'].includes(m[1])) {
+            currentFn = { name: m[1], start: i, lines: [] };
+            braceDepth = 0;
+            break;
+          }
+        }
+      }
+
+      if (currentFn) {
+        currentFn.lines.push(line);
+        for (const ch of line) {
+          if (ch === '{') braceDepth++;
+          else if (ch === '}') braceDepth--;
+        }
+        if (braceDepth <= 0 && currentFn.lines.length > 1) {
+          currentFn.end = i;
+          fns.push(currentFn);
+          currentFn = null;
+        }
+      }
+    }
+    if (currentFn) { currentFn.end = lines.length - 1; fns.push(currentFn); }
+  }
+  return fns;
+}
+
+// ─── Metrics ─────────────────────────────────────────────────
+function cyclomatic(code) {
+  const text = code.join ? code.join('\n') : code;
+  let cc = 1;
+  const jsPatterns = [/\bif\b/g, /\belse\s+if\b/g, /\bfor\b/g, /\bwhile\b/g, /\bcase\b/g,
+    /&&/g, /\|\|/g, /\?\s*[^:]/g, /\bcatch\b/g];
+  const pyPatterns = [/\bif\b/g, /\belif\b/g, /\bfor\b/g, /\bwhile\b/g, /\band\b/g,
+    /\bor\b/g, /\bexcept\b/g, /\bif\b.*\belse\b/g];
+  for (const p of jsPatterns) { const m = text.match(p); if (m) cc += m.length; }
+  return cc;
+}
+
+function maxNesting(lines, lang) {
+  let max = 0, current = 0;
+  if (lang === 'python') {
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+      const indent = line.search(/\S/);
+      const depth = Math.floor(indent / 4);
+      if (depth > max) max = depth;
+    }
+  } else {
+    for (const line of lines) {
+      for (const ch of line) {
+        if (ch === '{') { current++; if (current > max) max = current; }
+        else if (ch === '}') current--;
+      }
+    }
+  }
+  return max;
+}
+
+function lineNesting(lines, lang) {
+  const depths = [];
+  if (lang === 'python') {
+    for (const line of lines) {
+      if (line.trim() === '') { depths.push(0); continue; }
+      depths.push(Math.floor(line.search(/\S/) / 4));
+    }
+  } else {
+    let d = 0;
+    for (const line of lines) {
+      let lineD = d;
+      for (const ch of line) {
+        if (ch === '{') d++;
+        else if (ch === '}') { d--; lineD = d; }
+      }
+      depths.push(Math.max(0, lineD));
+    }
+  }
+  return depths;
+}
+
+function functionLength(fn) {
+  return fn.lines.filter(l => l.trim() !== '' && !l.trim().startsWith('//')).length;
+}
+
+// ─── Smells ──────────────────────────────────────────────────
+function findSmells(lines, fns, lang) {
+  const smells = [];
+
+  // Magic numbers
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].replace(/\/\/.*$/, '').replace(/#.*$/, '');
+    const nums = line.match(/(?<![.\w])\b(\d{2,})\b(?!\s*[=:].*(?:const|let|var|=))/g);
+    if (nums) {
+      for (const n of nums) {
+        const v = parseInt(n);
+        if (v > 1 && v !== 10 && v !== 100 && v !== 1000 && v !== 200 && v !== 404 && v !== 500 && v !== 255 && v !== 256 && v !== 1024)
+          smells.push({ line: i + 1, type: 'magic-number', msg: `Magic number <strong>${n}</strong> — consider naming as a constant`, severity: 'low' });
+      }
+    }
+  }
+
+  // Deep nesting per function
+  for (const fn of fns) {
+    const nest = maxNesting(fn.lines, lang);
+    if (nest > 3)
+      smells.push({ line: fn.start + 1, type: 'deep-nesting', msg: `<strong>${fn.name}()</strong> has ${nest} levels of nesting — extract inner logic`, severity: 'medium' });
+  }
+
+  // Long functions
+  for (const fn of fns) {
+    const len = functionLength(fn);
+    if (len > 50)
+      smells.push({ line: fn.start + 1, type: 'god-function', msg: `<strong>${fn.name}()</strong> is ${len} lines — split into smaller functions`, severity: 'high' });
+    else if (len > 30)
+      smells.push({ line: fn.start + 1, type: 'long-function', msg: `<strong>${fn.name}()</strong> is ${len} lines — approaching refactor threshold`, severity: 'medium' });
+  }
+
+  // High cyclomatic
+  for (const fn of fns) {
+    const cc = cyclomatic(fn.lines);
+    if (cc > 15)
+      smells.push({ line: fn.start + 1, type: 'high-complexity', msg: `<strong>${fn.name}()</strong> has cyclomatic complexity ${cc} — break into simpler paths`, severity: 'high' });
+    else if (cc > 10)
+      smells.push({ line: fn.start + 1, type: 'moderate-complexity', msg: `<strong>${fn.name}()</strong> has cyclomatic complexity ${cc}`, severity: 'medium' });
+  }
+
+  // Too many params
+  for (const fn of fns) {
+    const firstLine = fn.lines[0];
+    const paramMatch = firstLine.match(/\(([^)]*)\)/);
+    if (paramMatch) {
+      const params = paramMatch[1].split(',').filter(p => p.trim());
+      if (params.length > 5)
+        smells.push({ line: fn.start + 1, type: 'many-params', msg: `<strong>${fn.name}()</strong> has ${params.length} parameters — use an options object`, severity: 'medium' });
+    }
+  }
+
+  // Duplicated logic hint: same function called 5+ times
+  const callCounts = {};
+  for (const line of lines) {
+    const calls = line.match(/(\w+)\s*\(/g);
+    if (calls) calls.forEach(c => {
+      const name = c.replace(/\s*\($/, '');
+      callCounts[name] = (callCounts[name] || 0) + 1;
+    });
+  }
+
+  // TODO/FIXME/HACK
+  for (let i = 0; i < lines.length; i++) {
+    if (/\b(TODO|FIXME|HACK|XXX)\b/i.test(lines[i]))
+      smells.push({ line: i + 1, type: 'todo', msg: `Contains <strong>${lines[i].match(/\b(TODO|FIXME|HACK|XXX)\b/i)[1]}</strong> comment`, severity: 'info' });
+  }
+
+  smells.sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2, info: 3 };
+    return (order[a.severity] || 9) - (order[b.severity] || 9);
+  });
+  return smells;
+}
+
+// ─── Grading ─────────────────────────────────────────────────
+function grade(score) {
+  if (score >= 90) return { letter: 'A', color: 'var(--green)', bg: 'rgba(63,185,80,.12)', label: 'Clean and maintainable' };
+  if (score >= 75) return { letter: 'B', color: 'var(--green)', bg: 'rgba(63,185,80,.08)', label: 'Good with minor issues' };
+  if (score >= 60) return { letter: 'C', color: 'var(--yellow)', bg: 'rgba(210,153,34,.12)', label: 'Moderate complexity — refactoring recommended' };
+  if (score >= 40) return { letter: 'D', color: 'var(--orange)', bg: 'rgba(240,136,62,.12)', label: 'High complexity — needs attention' };
+  return { letter: 'F', color: 'var(--red)', bg: 'rgba(248,81,73,.12)', label: 'Critical complexity — refactor urgently' };
+}
+
+function fnGrade(cc) {
+  if (cc <= 5) return { letter: 'A', color: 'var(--green)' };
+  if (cc <= 10) return { letter: 'B', color: 'var(--green)' };
+  if (cc <= 15) return { letter: 'C', color: 'var(--yellow)' };
+  if (cc <= 25) return { letter: 'D', color: 'var(--orange)' };
+  return { letter: 'F', color: 'var(--red)' };
+}
+
+// ─── Main ────────────────────────────────────────────────────
+function analyze() {
+  const code = $('codeInput').value;
+  if (!code.trim()) { showToast('Paste some code first'); return; }
+
+  const lines = code.split('\n');
+  const lang = detectLang(code);
+  $('langTag').style.display = 'inline';
+  $('langTag').textContent = lang === 'python' ? 'Python' : 'JavaScript/TypeScript';
+
+  const fns = findFunctions(lines, lang);
+  const globalCC = cyclomatic(lines);
+  const globalNest = maxNesting(lines, lang);
+  const smells = findSmells(lines, fns, lang);
+  const nonEmpty = lines.filter(l => l.trim() !== '').length;
+
+  // Score: start at 100, deduct for issues
+  let score = 100;
+  const highSmells = smells.filter(s => s.severity === 'high').length;
+  const medSmells = smells.filter(s => s.severity === 'medium').length;
+  const lowSmells = smells.filter(s => s.severity === 'low').length;
+  score -= highSmells * 12;
+  score -= medSmells * 5;
+  score -= lowSmells * 1;
+  if (globalCC > 20) score -= 10;
+  else if (globalCC > 10) score -= 5;
+  if (globalNest > 5) score -= 10;
+  else if (globalNest > 3) score -= 5;
+  score = Math.max(0, Math.min(100, score));
+
+  const g = grade(score);
+
+  // Render grade card
+  $('gradeCard').innerHTML = `<div class="grade-card">
+    <div class="grade-letter" style="color:${g.color};background:${g.bg}">${g.letter}</div>
+    <div class="grade-details">
+      <h3>${score}/100 — ${g.label}</h3>
+      <div class="grade-stats">
+        <span class="grade-stat">Lines: <strong>${nonEmpty}</strong></span>
+        <span class="grade-stat">Functions: <strong>${fns.length}</strong></span>
+        <span class="grade-stat">Cyclomatic: <strong>${globalCC}</strong></span>
+        <span class="grade-stat">Max Nesting: <strong>${globalNest}</strong></span>
+        <span class="grade-stat">Smells: <strong>${smells.length}</strong></span>
+      </div>
+    </div>
+  </div>`;
+
+  // Function table
+  if (fns.length > 0) {
+    let tableHtml = `<div class="section-title">Functions <span class="badge badge--${fns.length > 10 ? 'yellow' : 'green'}">${fns.length}</span></div>
+    <table class="fn-table"><tr><th>Function</th><th>Lines</th><th>CC</th><th>Nesting</th><th></th><th>Grade</th></tr>`;
+
+    for (const fn of fns) {
+      const cc = cyclomatic(fn.lines);
+      const len = functionLength(fn);
+      const nest = maxNesting(fn.lines, lang);
+      const fg = fnGrade(cc);
+      const barW = Math.min(100, cc * 5);
+      tableHtml += `<tr>
+        <td class="fn-name">${escHtml(fn.name)}()</td>
+        <td>${len}</td><td>${cc}</td><td>${nest}</td>
+        <td><div class="fn-bar" style="width:${barW}%;background:${fg.color}"></div></td>
+        <td class="fn-grade" style="color:${fg.color}">${fg.letter}</td>
+      </tr>`;
+    }
+    tableHtml += '</table>';
+    $('fnTable').innerHTML = tableHtml;
+  } else {
+    $('fnTable').innerHTML = '';
+  }
+
+  // Smells
+  if (smells.length > 0) {
+    const icons = { high: '\u{1f6a8}', medium: '\u26a0\ufe0f', low: '\u{1f4a1}', info: '\u2139\ufe0f' };
+    let smellHtml = `<div class="section-title">Code Smells <span class="badge badge--${highSmells > 0 ? 'red' : medSmells > 0 ? 'yellow' : 'green'}">${smells.length}</span></div>`;
+    for (const s of smells) {
+      smellHtml += `<div class="smell">
+        <span class="smell-icon">${icons[s.severity] || ''}</span>
+        <span class="smell-line">L${s.line}</span>
+        <span class="smell-msg">${s.msg}</span>
+      </div>`;
+    }
+    $('smells').innerHTML = smellHtml;
+  } else {
+    $('smells').innerHTML = '<div class="section-title">Code Smells <span class="badge badge--green">0</span></div><p style="color:var(--green);padding:8px 0">No smells detected.</p>';
+  }
+
+  // Heatmap
+  const depths = lineNesting(lines, lang);
+  let hmHtml = '<div class="section-title">Nesting Heatmap</div><div class="heatmap">';
+  for (let i = 0; i < lines.length; i++) {
+    const d = depths[i];
+    let bg = 'transparent';
+    if (d >= 5) bg = 'rgba(248,81,73,.15)';
+    else if (d >= 4) bg = 'rgba(240,136,62,.12)';
+    else if (d >= 3) bg = 'rgba(210,153,34,.08)';
+    const escaped = escHtml(lines[i]) || ' ';
+    hmHtml += `<div class="hm-line" style="background:${bg}"><span class="hm-num">${i+1}</span><span class="hm-code">${escaped}</span></div>`;
+  }
+  hmHtml += '</div>';
+  $('heatmap').innerHTML = hmHtml;
+
+  // Markdown
+  let md = `# CodeScore Report\n\n**Grade:** ${g.letter} (${score}/100) — ${g.label}\n**Language:** ${lang}\n**Lines:** ${nonEmpty} | **Functions:** ${fns.length} | **Cyclomatic:** ${globalCC} | **Max Nesting:** ${globalNest}\n\n`;
+
+  if (fns.length > 0) {
+    md += `## Functions\n\n| Function | Lines | CC | Nesting | Grade |\n|----------|-------|----|---------|-------|\n`;
+    for (const fn of fns) {
+      const cc = cyclomatic(fn.lines);
+      md += `| ${fn.name}() | ${functionLength(fn)} | ${cc} | ${maxNesting(fn.lines, lang)} | ${fnGrade(cc).letter} |\n`;
+    }
+    md += '\n';
+  }
+
+  if (smells.length > 0) {
+    md += `## Code Smells (${smells.length})\n\n`;
+    for (const s of smells) { md += `- **L${s.line}** [${s.severity}] ${s.msg.replace(/<\/?strong>/g, '**')}\n`; }
+    md += '\n';
+  }
+
+  md += '---\n*Generated by [CodeScore](https://codescore-psi.vercel.app)*\n';
+  lastMarkdown = md;
+
+  $('output').style.display = 'block';
+  $('mdRaw').style.display = 'none';
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function copyMarkdown() {
+  navigator.clipboard.writeText(lastMarkdown)
+    .then(() => showToast('Markdown copied!'))
+    .catch(() => showToast('Copy failed'));
+}
+function toggleRaw() {
+  const el = $('mdRaw');
+  if (el.style.display === 'none') { el.textContent = lastMarkdown; el.style.display = 'block'; }
+  else el.style.display = 'none';
+}
+function clearAll() { $('codeInput').value = ''; $('output').style.display = 'none'; $('langTag').style.display = 'none'; lastMarkdown = ''; }
+
+function loadExample() {
+  $('codeInput').value = `const express = require('express');
+const db = require('./db');
+
+function processOrder(order, user, config) {
+  let total = 0;
+  let discount = 0;
+
+  if (order.items && order.items.length > 0) {
+    for (let i = 0; i < order.items.length; i++) {
+      const item = order.items[i];
+      if (item.type === 'physical') {
+        if (item.weight > 50) {
+          total += item.price + 15.99;
+          if (user.isPremium) {
+            total -= 15.99;
+            if (config.freeShippingEnabled && item.price > 100) {
+              discount += item.price * 0.05;
+            }
+          }
+        } else {
+          total += item.price + 5.99;
+        }
+      } else if (item.type === 'digital') {
+        total += item.price;
+        if (user.hasSubscription || config.digitalDiscountEnabled) {
+          discount += item.price * 0.10;
+        }
+      } else if (item.type === 'service') {
+        total += item.price * item.hours;
+        if (item.hours > 8) {
+          discount += item.price * item.hours * 0.15;
+        }
+      }
+    }
+  }
+
+  if (user.isPremium && total > 200) {
+    discount += total * 0.03;
+  }
+
+  // TODO: add tax calculation
+  const tax = total * 0.0875;
+  total = total - discount + tax;
+
+  return { total: Math.round(total * 100) / 100, discount, tax, itemCount: order.items.length };
+}
+
+function validateEmail(email) {
+  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);
+}
+
+const getUser = async (id) => {
+  try {
+    const user = await db.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (!user) return null;
+    return user;
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+};`;
+  analyze();
+}
+
+$('codeInput').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') analyze();
+});
+</script>
+
+</body>
+</html>
